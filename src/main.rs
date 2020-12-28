@@ -13,6 +13,7 @@ use std::time::Duration;
 use state::LocalStorage;
 use windows_service::service_control_handler::ServiceStatusHandle;
 use std::sync::mpsc::Receiver;
+use std::io::Write;
 
 define_windows_service!(ffi_service, service_entry);
 
@@ -21,6 +22,9 @@ static SERVICE_NAME: state::LocalStorage<String> = LocalStorage::new();
 const STOP_SERVICE_CODE: u32 = 1;
 const CHILD_PROCESS_ERROR_CODE: u32 = 2;
 const UNKNOWN_ERROR_CODE: i32 = 3;
+const TARGET_PROCESS_NOT_FOUND_CODE: u32 = 4;
+const ARGUMENT_DECODE_ERROR_CODE: u32 = 5;
+const ARGUMENT_AMOUNT_ERROR_CODE: u32 = 6;
 
 fn service_entry(arguments: Vec<OsString>) {
     if let Err(_e) = service_exec(arguments) {
@@ -69,7 +73,20 @@ fn service_exec(arguments: Vec<OsString>) -> windows_service::Result<()> {
 }
 
 fn service_loop(arguments: Vec<OsString>, shutdown_rx: Receiver<()>) -> u32 {
-    let path = "C:\\Users\\tenor\\Documents\\Codes\\trevo_se\\sombra\\executables\\tcp_echo.exe";
+    if arguments.len() < 2 {
+        return ARGUMENT_AMOUNT_ERROR_CODE;
+    }
+
+    let path = if let Some(arg1) = arguments[1].to_str() {
+        if let Ok(path) = dunce::canonicalize(arg1) {
+            path
+        } else {
+            return TARGET_PROCESS_NOT_FOUND_CODE;
+        }
+    } else {
+        return ARGUMENT_DECODE_ERROR_CODE;
+    };
+
     let mut exit_code = 0;
     if let Ok(mut child) = std::process::Command::new(path).spawn() {
         'process_loop: loop {
