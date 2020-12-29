@@ -11,9 +11,7 @@ use std::ffi::OsString;
 use rand::Rng;
 use std::time::Duration;
 use state::LocalStorage;
-use windows_service::service_control_handler::ServiceStatusHandle;
 use std::sync::mpsc::Receiver;
-use std::io::Write;
 
 define_windows_service!(ffi_service, service_entry);
 
@@ -87,8 +85,18 @@ fn service_loop(arguments: Vec<OsString>, shutdown_rx: Receiver<()>) -> u32 {
         return ARGUMENT_DECODE_ERROR_CODE;
     };
 
+    let args = if arguments.len() >= 2 {
+        let mut args = vec![];
+        for a in &arguments[2..] {
+            args.push(a);
+        }
+        args
+    } else {
+        vec![]
+    };
+
     let mut exit_code = 0;
-    if let Ok(mut child) = std::process::Command::new(path).spawn() {
+    if let Ok(mut child) = std::process::Command::new(path).args(args).spawn() {
         'process_loop: loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
@@ -98,7 +106,7 @@ fn service_loop(arguments: Vec<OsString>, shutdown_rx: Receiver<()>) -> u32 {
                 Ok(None) => {
                     if shutdown_rx.try_recv().is_ok() {
                         exit_code = STOP_SERVICE_CODE;
-                        child.kill();
+                        let _ = child.kill();
                         break 'process_loop;
                     }
                 },
